@@ -1,0 +1,13 @@
+[Unit]
+Description=factorio
+After=network.target
+
+[Service]
+Type=simple
+User=factorio
+ExecStart=/opt/factorio/bin/x64/factorio --start-server /opt/factorio/saves/save-file.zip
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target

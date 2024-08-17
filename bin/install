@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+# setup a headless factorio server
+# https://wiki.factorio.com/Multiplayer#Dedicated.2FHeadless_server
+
+echo "🐛 Setting up factorio headless server..."
+
+# require root
+if [ "$EUID" -ne 0 ]; then
+    echo "Root reqiured. Please rerun:"; echo
+    echo "  sudo $0 $@"; echo
+    exit 1
+fi
+
+FACTORIO_VER="1.1.109" # default version
+FACTORIO_TAR_NAME="factorio.tar.xz"
+
+# check for specified version
+if [ -z "$1" ]; then
+    echo "No version provided, assuming: $FACTORIO_VER ..."
+else
+    FACTORIO_VER="$1"
+    echo "Using specified version: $FACTORIO_VER ..."
+fi
+
+# default download directory
+FACTORIO_DL_DIR="downloads/$FACTORIO_VER/$FACTORIO_TAR_NAME"
+
+# check if version exists locally, download if not
+if [ -f "$FACTORIO_DL_DIR" ]; then
+    echo "Version $FACTORIO_VER found locally at: $FACTORIO_DL_DIR."
+else
+    echo "Version $FACTORIO_VER not found locally."
+
+    # try to fallback to other versions
+    echo "Checking for other possible versions ..."
+    VERSIONS_LOCAL=$(ls downloads | sort -rV | xargs)
+    echo "Local versions found: [ $VERSIONS_LOCAL ]"
+
+    # set most recent
+    VERSION_LATEST=$(echo $VERSIONS_LOCAL | awk '{print $1}')
+    if [ ! -z "$VERSION_LATEST" ]; then
+        echo "Latest local version found: $VERSION_LATEST"
+        FACTORIO_DL_DIR="downloads/$VERSION_LATEST/$FACTORIO_TAR_NAME"
+    else
+        # verify file exists at found dir
+        if [ -f "$FACTORIO_DL_DIR" ]; then
+            echo "Version $VERSION_LATEST found locally at $FACTORIO_DL_DIR."
+        else
+            # download
+            echo "Version $VERSION_LATEST not found locally, downloading ..."
+            mkdir -p "downloads/$FACTORIO_VER"
+            FACTORIO_URL="https://www.factorio.com/get-download/$FACTORIO_VER/headless/linux64"
+            wget -O "$FACTORIO_DL_DIR" "$FACTORIO_URL"
+            if [ $? -ne 0 ]; then
+                echo "Failed to download factorio version $FACTORIO_VER."
+                rm -r "downloads/$FACTORIO_VER"
+                exit 1
+            fi
+            echo "Downloaded version $FACTORIO_VER to: $FACTORIO_DL_DIR"
+        fi
+    fi
+fi
+
+# # glibc >= 2.18 required
+# # https://forums.factorio.com/viewtopic.php?t=54654#p324493
+BASE_DIR="/opt"
+FACTORIO_DIR="$BASE_DIR/factorio"
+
+# extract if not already on machine
+if [ -d "$FACTORIO_DIR" ]; then
+    echo "Skipping extract. Factorio already installed at: $FACTORIO_DIR"
+else
+    echo "Extracting: $FACTORIO_DL_DIR"
+    # sudo tar -xzf $FACTORIO_DL_DIR        # gz format
+    sudo tar -xJf $FACTORIO_DL_DIR -C $BASE_DIR  # xz format
+    if [ $? -ne 0 ]; then
+        echo "Failed to extract: $FACTORIO_DL_DIR"
+        rm -r temporary
+        exit 1
+    fi
+    echo "Extracted to $FACTORIO_DIR"
+fi
+
+# Check if the user 'factorio' already exists
+if id "factorio" &>/dev/null; then
+    echo "User 'factorio' already exists. Skipping user creation."
+else
+    echo "Setting up factorio user ..."
+    sudo useradd -d $FACTORIO_DIR factorio
+fi
+chown -R factorio:factorio $FACTORIO_DIR
+
+# ensure save file exists
+echo "Checking for saves directory .. "
+FACTORIO_EXEC="$FACTORIO_DIR/bin/x64/factorio"
+SAVES_DIR="$FACTORIO_DIR/saves"
+mkdir -p $SAVES_DIR
+SAVE_FILE="$SAVES_DIR/save-file.zip"
+if [ -f "$SAVE_FILE" ]; then
+    echo "Default save found at: $SAVE_FILE"
+else
+    echo "No default save found. Creating ..."
+    $FACTORIO_EXEC --create "$SAVE_FILE"
+    echo "Created default save at: $SAVE_FILE"
+fi
+
+# setup systemd service
+echo "Setting up systemd service ..."
+FACTORIO_SERVICE="/etc/systemd/system/factorio.service"
+if [ -f "$FACTORIO_SERVICE" ]; then
+    echo "Systemd service already exists at: $FACTORIO_SERVICE"
+else
+    sudo systemctl stop factorio.service
+    cp factorio.service $FACTORIO_SERVICE
+    sudo systemctl daemon-reload
+    sudo systemctl enable factorio.service
+    sudo systemctl start factorio.service
+    sudo systemctl status factorio.service --no-pager
+fi
+
+echo "Factorio service running on port 34197"
