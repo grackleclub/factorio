@@ -12,7 +12,14 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-FACTORIO_VER="1.1.109" # default version
+DEFAULT_VERSION="stable"
+if [ -z "$1" ]; then
+    echo "No version provided, using default: $DEFAULT_VERSION ..."
+else
+    FACTORIO_VER="$1"
+    echo "Using specified version: $FACTORIO_VER ..."
+fi
+FACTORIO_URL="https://www.factorio.com/get-download/$FACTORIO_VER/headless/linux64"
 FACTORIO_TAR_NAME="factorio.tar.xz"
 
 # check for specified version
@@ -50,7 +57,6 @@ else
             # download
             echo "Version $VERSION_LATEST not found locally, downloading ..."
             mkdir -p "downloads/$FACTORIO_VER"
-            FACTORIO_URL="https://www.factorio.com/get-download/$FACTORIO_VER/headless/linux64"
             if ! wget -O "$FACTORIO_DL_DIR" "$FACTORIO_URL"; then
                 echo "Failed to download factorio version $FACTORIO_VER."
                 rm -r "downloads/$FACTORIO_VER"
